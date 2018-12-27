@@ -40,6 +40,10 @@
           (else (help i (+ j 1)))))                                     ; element is NOT a possible position, so it is not added
   (help 0 0))
 
+(define (oponent x)
+  (if (eq? x "X")
+      "O"
+      "X"))
 
 ; Evalutates a specific position on the given board
 (define (eval-position board position player me)
