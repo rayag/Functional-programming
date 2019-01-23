@@ -1,4 +1,5 @@
 module TreeUtils where
+--import Debug.Trace
 
 type Attribute = (String, String)
 
@@ -6,14 +7,15 @@ data Tree = Element String [Tree] [Attribute] | Text String  deriving (Show, Eq)
 
 -- Adds a subtree on the relevant place
 addTree :: Tree -> Tree -> Tree
-addTree tree@(Element _ [Text _] _) _                              = tree  -- if this is reached than there is no suitable place for the new tree to be added
-addTree (Element parName subTrees attrList) new@(Element name _ _) = if isSet && childMatches 
-                                                                     then (Element parName (subTrees ++ [new]) attrList)
-                                                                     else (Element parName (map (\subTree -> addTree subTree new) subTrees) attrList)
+addTree tree@(Element _ [Text _] _) _                                   = tree  -- if this is reached than there is no suitable place for the new tree to be added
+addTree tree@(Element parName subTrees attrList) new@(Element name _ _) = if isSet tree && childMatches 
+                                                                           then (Element parName (subTrees ++ [new]) attrList)
+                                                                           else (Element parName (map (\subTree -> addTree subTree new) subTrees) attrList)
     where 
-        subNames                         = map (\(Element name _ _) -> name) subTrees
-        isSet                            = all (==(head subNames)) subNames
-        childMatches                     = (head subNames) == name
+        subNames     = map (\(Element subTreeName _ _) -> subTreeName) subTrees
+        childMatches = (head subNames) == name
+addTree tree (Text _)                                                   = tree
+addTree tree _                                                          = tree
 
 
 
@@ -21,23 +23,25 @@ addTree (Element parName subTrees attrList) new@(Element name _ _) = if isSet &&
 -- if path evaluates to a composite value, then the whole subtree is displayed
 getProperty :: String -> Tree -> [String]
 getProperty prop (Element elName (Text elVal:[]) _) = if elName == prop then [elVal] else [] -- if names match, then property value should be returned
-getProperty prop (Element elName children attributes) 
-    | elem '/' prop = if elName == name 
-                       then concat $ map (getProperty rest) children -- the rest of the address should be looked for within the children
-                       else concat $ map (getProperty prop) children -- the whole address is somewhere within current element subtrees
-    | otherwise = if name == elName then [treeToString t] else []    -- the only chances are that this is the subtree we are looking for
+getProperty prop tree@(Element elName children _)  
+    | elName == name && (elem '/' prop) = concat $ map (getProperty rest) children -- the rest of the address should be looked for within the children
+    | elName == name                  = [treeToString tree]
+    | otherwise                       = []                  
     where 
         name = takeWhile (/='/') prop
         rest = dropWhile (=='/') $ dropWhile (/='/') prop
+getProperty _ _ = [] -- This case must not be reached
 
 -- For elements that act like lists (a.k.a their subelements are of the same type)
 -- returns the value of the subelement on specified index
 getPropAtIndex :: String -> Int -> Tree -> String
-getPropAtIndex propName index (Element _ subTrees _)
-    | index < 0 || index > length subTrees = "Invalid index"
-    | otherwise                            = concat $ getProperty propName (subTrees !! index) 
-getPropAtIndex _ _ _ = []
-
+getPropAtIndex address index tree = helper subtree
+    where 
+        subtree = getSubTreeAtIndex propName index tree
+        helper Nothing   = ""
+        helper (Just tr) = concat $ getProperty address tr
+        propName = takeWhile (/='/') address
+            
 -- Returns the values of this attribute among all subTrees within the specified (if it exists)
 getAttribute :: String -> Tree -> [String]
 getAttribute attrName (Element _ subTrees attrList) 
@@ -51,56 +55,72 @@ getAttribute _ _             = []
 -- For Examlple: changeProperty "name" "Pesho" (Element "person" [(Element "name" [Text "Gosho"] [])] []) -> (Element "person" [(Element "name" [Text "Pesho"] [])] [])
 changeProperty :: String -> String -> Tree -> Tree
 changeProperty propName newVal el@(Element elName (Text _:[]) attributes) = if propName == elName then (Element elName (Text newVal:[]) attributes) else el
-changeProperty propName newVal (Element elName children attributes)       = (Element elName newChildren attributes)
+changeProperty address newVal el@(Element elName children attributes)     = if first == elName then (Element elName newChildren attributes) else el
     where
-        newChildren = map (changeProperty propName newVal) children
+        newChildren = map (changeProperty rest newVal) children
+        first = takeWhile (/='/') address
+        rest  = dropWhile (=='/') $ dropWhile (/='/') address
+changeProperty _ _ el@(Text _)                                            = el -- This case must not be reached
+
+changeAttribute :: String -> String -> Tree -> Tree
+changeAttribute requestedName newVal (Element name subTrees attrList) = (Element name newSubTrees newAttrList)
+    where
+        newAttrList = foldr (\(attrName, val) rest -> if attrName == requestedName then (attrName, newVal) : rest else (attrName, val) : rest) [] attrList
+        newSubTrees = map (changeAttribute requestedName newVal) subTrees
+changeAttribute _ _ el@(Text _) = el
+
+getSubTreeAtIndex :: String -> Int -> Tree -> Maybe Tree
+getSubTreeAtIndex elName index tree@(Element _ subTrees _) 
+    | index < 0 || index >= length subTrees = Nothing
+    | otherwise = Just ((getSubTrees elName tree) !! index)
+getSubTreeAtIndex _ _ (Text _) = Nothing
 
 -- Returns subtree named in a specific way
 -- if an element is a set of elements, then it returns the first of them
-getSubTree :: String -> Tree -> Tree
-getSubTree elName tree@(Element name [Text _] attrList) = if elName == name then tree else Text "Empty"
-getSubTree elName tree@(Element name subTrees attrList)
-    | name == elName = tree
-    | isSet tree     = getSubTree elName (head subTrees)
-    | otherwise      = helper elName subTrees
-        where
-            helper _ []                                   = Text "Empty"
-            helper elName (first@(Element name _ _):rest) = if  firstSubTree /= Text "Empty" then firstSubTree else helper elName rest
-                where 
-                    firstSubTree = getSubTree elName first
+getSubTrees :: String -> Tree -> [Tree]
+getSubTrees elName tree@(Element name [Text _] _) = if elName == name then [tree] else []
+getSubTrees elName tree@(Element name subTrees _)
+    | name == elName = [tree]
+    | otherwise      = concat $ filter (not . null) $ map (getSubTrees elName) subTrees
+getSubTrees _ (Text _)                            = [] -- Text elements do not have subtrees
 
+-- Creates a tree which contains default properties. This is especially needed when
+-- a new tree is added, as its structure is directly gotten from the tree. This means
+-- that when a new tree is created it must follow the already established structure
+-- (have the same elements, subelements, attributes)
 makeDefault :: Tree -> Tree
 makeDefault (Element name [Text _] attrList) = (Element name [Text ""] defAttrList)
-    where defAttrList = map (\(name, _) -> (name, "")) attrList
+    where defAttrList = map (\(attrName, _) -> (attrName, "")) attrList
 makeDefault (Element name subTrees attrList) = (Element name defSubTrees defAttrList)
     where
         defSubTrees = map makeDefault subTrees
-        defAttrList = map (\(name, _) -> (name, "")) attrList
+        defAttrList = map (\(attrName, _) -> (attrName, "")) attrList
+makeDefault (Text _)                         = Text ""
 
-modifyFromList :: [(String, String)] -> Tree -> Tree
-modifyFromList lst t = foldl (\nv (elName, value) -> changeProperty elName value nv) t lst
-
+-- Returns True if all the subtrees of the current element are of the same type (in the sense that they have the same names)
+-- Text Elements could not have that property
 isSet :: Tree -> Bool
-isSet (Element name subTrees _) = all (==(head subNames)) subNames
+isSet (Element _ [Text _] _) = False
+isSet (Element _ subTrees _) = all (==(head subNames)) subNames
     where
         subNames = map (\(Element name _ _) -> name) subTrees
-isSet _                         = False
+isSet _                      = False
 
--- Returns list of subtrees which have properties specified by a condition
--- For example: subTreesByProperty "age" "21" t will return a list of subtrees whose elements with names "age" evaluate to "23"
-subTreesByProperty :: String -> String -> Tree -> [Tree]
-subTreesByProperty prop val tree@(Element name subTrees attrList)
-    | isSet t = concat $ filter (not . null) $ map (subTreesByProperty prop val) subTrees -- TODO 
-    | otherwise = if hasProp tree then [tree] else []
-        where 
-            hasProp tr = (concat $ getProperty prop tr)== val -- depends on getProperty!!!
+-- Returns True, if the tree has a property is equal to the requested one
+-- Example: "name" "Ivan" (Element "person" [(Element "name" [Text "Ivan"] [])] []) -> True
+--          "name" "Mimi" (Element "person" [(Element "name" [Text "Ivan"] [])] []) -> False
+satisfiesCondition :: String -> String -> Tree -> Bool
+satisfiesCondition prop value tree                        = any (==value) $ getProperty prop tree -- if any of the subtrees satisfies the condition, then this one does
 
 changePropByCondition :: String -> String -> String -> String -> Tree -> Tree
 changePropByCondition condProp condValue prop value tree@(Element name subTrees attrValue)
     | isSet tree   = Element name (map changeByCondSubtrees subTrees) attrValue
-    | otherwise = changeByCondSubtrees tree
+    | otherwise    = changeByCondSubtrees tree
         where 
-            changeByCondSubtrees tree = if concat (getProperty condProp tree) == condValue then changeProperty prop value tree else tree
+            changeByCondSubtrees subtree = if satisfiesCondition condProp condValue subtree
+                                            then changeProperty prop value subtree 
+                                            else subtree
+changePropByCondition _ _ _ _ tree@(Text _) = tree --program must not reach this condition, but if this happens, then nothing will be done
 
 deleteSubTreeByCondition :: String -> String -> Tree -> Tree
 deleteSubTreeByCondition _ _ tree@(Text _) = tree
@@ -108,7 +128,7 @@ deleteSubTreeByCondition prop val tree@(Element name subTrees attrList)
     | isSet tree = Element name filteredSubTrees attrList
     | otherwise  = Element name (map (deleteSubTreeByCondition prop val) subTrees) attrList
     where
-        filteredSubTrees = filter (\subtree -> (concat $ getProperty prop subtree) /= val) subTrees
+        filteredSubTrees = filter (not . (satisfiesCondition prop val)) subTrees
 
 -- If specified element is a list then returns length of that list
 -- Else returns 0
@@ -128,9 +148,14 @@ treeToString tree = helper 0 tree
                 subTreesString = concat $ map (helper (numTab + 1)) subTrees
         helper _ (Text _)                           = "" -- this should under no means happen
 
+modifyFromList :: [(String, String)] -> Tree -> Tree
+modifyFromList [] t  = t
+modifyFromList lst t = foldl (\nv (elName, value) -> changeProperty elName value nv) t lst
 
-t :: Tree
-t = (Element "people" [Element "person" [Element "name" [Text "Mimi"] [],Element "age" [Text "15"] [],Element "address" [Element "city" [Text "Sofia"] [],Element "street" [Element "strname" [Text "Rakovska"] [],Element "number" [Element "prop1" [Text "p1_value"] [],Element "prop2" [Text "p2_value"] []] []] []] []] [("id","1")],Element "person" [Element "name" [Text "Mimi"] [],Element "age" [Text "23"] [],Element "address" [Element "city" [Text "Pernik"] [],Element "street" [Element "strname" [Text "Golf"] [],Element "number" [Element "prop1" [Text "gosho_value"] [],Element "prop2" [Text "p2_value"] []] []] []] []] [("id","2")],Element "person" [Element "name" [Text "Pesho"] [],Element "age" [Text "30"] [],Element "address" [Element "city" [Text "Veliko Tarnovo"] [],Element "street" [Element "strname" [Text "Street_Pesho"] [],Element "number" [Element "prop1" [Text "pesho_value"] [],Element "prop2" [Text "p2_value"] []] []] []] []] [("id","3")]] [])
+
+
+t1 :: Tree
+t1 = (Element "people" [Element "person" [Element "name" [Text "Mimi"] [],Element "age" [Text "15"] [],Element "address" [Element "city" [Text "Sofia"] [],Element "street" [Element "strname" [Text "Rakovska"] [],Element "number" [Element "digit" [Text "1"] [],Element "digit" [Text "2"] []] []] []] []] [("id","1")],Element "person" [Element "name" [Text "Gosho"] [],Element "age" [Text "23"] [],Element "address" [Element "city" [Text "Pernik"] [],Element "street" [Element "strname" [Text "Golf"] [],Element "number" [Element "digit" [Text "3"] [],Element "digit" [Text "3"] []] []] []] []] [("id","2")],Element "person" [Element "name" [Text "Pesho"] [],Element "age" [Text "30"] [],Element "address" [Element "city" [Text "Veliko Tarnovo"] [],Element "street" [Element "strname" [Text "Street_Pesho"] [],Element "number" [Element "digit" [Text "4"] [],Element "digit" [Text "8"] []] []] []] []] [("id","3")]] [])
 
 
 

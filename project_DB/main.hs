@@ -5,10 +5,13 @@ import TextProcessUtils
 import TreeUtils
 
 processAdd :: String -> Tree -> IO()
-processAdd args t = writeFile "file2.txt" $ treeToXML $ addTree t $ modifyFromList propList $ makeDefault $ getSubTree name t
+processAdd args t
+    | canProceed = writeFile "file2.txt" $ treeToXML $ addTree t $ modifyFromList propList $ makeDefault $ head $ getSubTrees name t
+    | otherwise  = putStrLn "Operation cannot be performed"
     where 
         name = takeWhile (not . isSpace) args
         propList = convertToPropList $ takeAfter name args
+        canProceed = not $ null $ getSubTrees name t
 
 processDelete :: String -> Tree -> IO()
 processDelete args t 
@@ -24,14 +27,14 @@ processDelete args t
 processUpdate :: String -> Tree -> IO()
 processUpdate args t 
     | length argLst == 4 = do
-                              writeFile "file2.txt" $ treeToXML $ changePropByCondition prop cond elem newVal t
+                              writeFile "file2.txt" $ treeToXML $ changePropByCondition prop cond el newVal t
                               putStrLn "Update executed successfully"
     | otherwise = putStrLn $ "Wrong number of arguments! Usage update <cond_prop> <cond_prop_val> <new_prop> <new_prop_val>"
     where
         argLst = split args 
         prop   = argLst !! 0
         cond   = argLst !! 1
-        elem   = argLst !! 2
+        el     = argLst !! 2
         newVal = argLst !! 3
 
 processRead :: String -> Tree -> IO()
@@ -47,8 +50,9 @@ processRead args t
             isAttrListing = matches "[a-z]+\\(@[a-zA-Z0-9_]+\\)" args
             attr          = matchRegex "[^@]+" $ matchRegex "@[a-zA-Z0-9_]+" args
             prop          = matchRegex "^[^[]+" args
-            isCond        = elem '=' args
+            
 
+main :: IO()
 main = do 
     contents <- readFile "file1.txt"
     input <- getLine
@@ -59,7 +63,8 @@ main = do
                     "update" -> processUpdate args (createTree "people" contents)
                     "delete" -> processDelete args (createTree "people" contents)
                     "read"   -> processRead args (createTree "people" contents)
-                    xs       -> putStrLn "Invalid command"
+                    "string" -> putStr $ show $ createTree "people" contents
+                    _        -> putStrLn "Invalid command"
     hFlush stdout
     main 
     --processCommand command args

@@ -1,8 +1,8 @@
 module TextProcessUtils where
 import Data.Char
+import Text.Regex.Posix 
 import Debug.Trace
 import TreeUtils
-import StructureUtils
 
 takeAfter :: String -> String -> String
 takeAfter s1 s2 
@@ -28,7 +28,7 @@ isSubarray xs (y:ys) = begins xs (y:ys) || isSubarray xs ys
     where begins (p:ps) (m:ms) = if p == m then begins ps ms else False
           begins [] _          = True
           begins _ []          = False 
-isSubarray xs []     = False     
+isSubarray _ []     = False     
 
 hasSubElements :: String -> String -> Bool
 hasSubElements el code = (length $ filter (=='<') $ middle) > 0
@@ -42,7 +42,6 @@ getData :: String -> [(String,String)]
 getData [] = []
 getData s  = (element, value) : getData rest
     where element = takeWhile isLetter $ takeWhile (/='>') $ dropWhile (=='<') $ dropWhile (/='<') s
-          isLetter c = c >= 'a' && c <= 'z'
           value      = getValue s element
           rest       = takeAfter  ("</" ++ element ++ ">") s
 
@@ -102,9 +101,9 @@ createTree currentElement s
 
 -- Returns a list of direct subelements of an element according to xml content
 getDirectSubElements :: String -> String -> [(String)]
-getDirectSubElements elem code = if hasSubElements elem code then getElems middle else []
+getDirectSubElements el code = if hasSubElements el code then getElems middle else []
     where 
-        middle = dropWhile (/='<') $ dropWhile (/='>') $ takeAfter ("<" ++ elem) $ takeBefore ("</" ++ elem ++ ">") $ code
+        middle     = dropWhile (/='<') $ dropWhile (/='>') $ takeAfter ("<" ++ el) $ takeBefore ("</" ++ el ++ ">") $ code
         getElems s = 
            if (length s) > 2 then currentElement : getElems rest else []
                  where currentElement = getCurrentElement s
@@ -124,14 +123,6 @@ dropLast n (x:xs)
     | length xs < n  = []
     | otherwise      = x : dropLast n xs
 
--- Assigns list elements as values to a Tree
-createFromString :: [String] -> Tree -> Tree
-createFromString lst (Element name subTrees attrList) = (Element name (addValue lst subTrees) attrList)
-    where 
-        addValue [] _ = []
-        addValue _ [] = []
-        addValue (first:rest) ((Element name [Text _] _):restChildren) = Element name [Text first] [] : addValue rest restChildren
-
 -- Splits String by whiteSpaces
 split :: String -> [String]
 split [] = []
@@ -147,25 +138,15 @@ treeToXML (Text s)          = s
 treeToXML t@(Element _ _ _) = helper 0 t
     where
          helper numTab (Element name subTrees attributes) = tabs ++ openingTag ++ case subTrees of (Text s:[]) -> s ++ closingTag
-                                                                                                   subTrees    -> "\n" ++ subElements ++ tabs ++ closingTag 
+                                                                                                   _           -> "\n" ++ subElements ++ tabs ++ closingTag 
                where
                     tabs        = replicate numTab '\t'
                     openingTag  = "<" ++ name ++ attrString ++ ">" 
                     closingTag  = "</" ++ name ++ ">"
-                    attrString  = space ++ (concatListVia " " $ map (\attr@(name, value) -> name ++ "=\"" ++ value ++ "\"") attributes)
+                    attrString  = space ++ (concatListVia " " $ map (\(attrName, value) -> attrName ++ "=\"" ++ value ++ "\"") attributes)
                     space       = if null attributes then [] else " "
                     subElements = concat $ map (\el -> helper (numTab + 1) el ++ "\n" ) subTrees
-
-structureToString :: Structure -> String
-structureToString Empty = ""
-structureToString e@(SElement name subStructs structAttrList) = helper 0 e
-    where
-         helper numTabs (SElement name subStructs structAttrList) = tabs ++ name ++ " " ++ attrString ++ "\n" ++ childrenStr
-            where
-                tabs = replicate numTabs '\t'
-                attrString = "(" ++ (concatListVia ", " structAttrList) ++ ")"
-                childrenStr = concat $ map (helper (numTabs + 1)) subStructs
-
+         helper _ _ = "" -- this must not be reached
 
 convertToPropList :: String -> [(String,String)]
 convertToPropList s 
@@ -179,4 +160,11 @@ convertToPropList s
 toInt :: String -> Int
 toInt s = foldl (\h t -> h * 10 + (toDig t)) 0 s
     where toDig c = fromIntegral $ ord c - ord '0'
+
+
+matches :: String -> String -> Bool
+matches reg str = str =~ reg
+
+matchRegex :: String -> String -> String
+matchRegex reg str = str =~ reg
         
