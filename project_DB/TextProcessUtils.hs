@@ -2,7 +2,7 @@ module TextProcessUtils where
 import Data.Char
 import Debug.Trace
 import TreeUtils
-import StuctureUtils
+import StructureUtils
 
 takeAfter :: String -> String -> String
 takeAfter s1 s2 
@@ -167,3 +167,16 @@ structureToString e@(SElement name subStructs structAttrList) = helper 0 e
                 childrenStr = concat $ map (helper (numTabs + 1)) subStructs
 
 
+convertToPropList :: String -> [(String,String)]
+convertToPropList s 
+    | length s > 5 = (name, val) : convertToPropList rest
+    | otherwise    = []
+    where 
+        name = takeWhile (not . isSpace) $ takeWhile (/='=') $ dropWhile isSpace s
+        val  = takeWhile (/='\"') $ tail $ dropWhile (/='\"') $ dropWhile (/='=') s
+        rest = dropWhile isSpace $ dropWhile (=='\"') $ takeAfter val s
+
+toInt :: String -> Int
+toInt s = foldl (\h t -> h * 10 + (toDig t)) 0 s
+    where toDig c = fromIntegral $ ord c - ord '0'
+        
