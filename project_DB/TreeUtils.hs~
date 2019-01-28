@@ -26,7 +26,7 @@ getProperty prop (Element elName (Text elVal:[]) _) = if elName == prop then [el
 getProperty prop tree@(Element elName children _)  
     | elName == name && (elem '/' prop) = concat $ map (getProperty rest) children -- the rest of the address should be looked for within the children
     | elName == name                  = [treeToString tree]
-    | otherwise                       = concat $ map (getProperty prop) children                
+    | otherwise                       = []                  
     where 
         name = takeWhile (/='/') prop
         rest = dropWhile (=='/') $ dropWhile (/='/') prop
@@ -157,18 +157,10 @@ modifyFromList :: [(String, String)] -> Tree -> Tree
 modifyFromList [] t  = t
 modifyFromList lst t = foldl (\nv (elName, value) -> changePropOrAttr elName value nv) t lst
 
--- HARDCODDED!!!
-fixIds :: Tree -> Tree
-fixIds tree@(Element name subTrees attrList)  
-    | name == "people" = (Element name newSubTrees attrList)
-    | otherwise        = tree
-    where 
-        newSubTrees = map (\(subtree, newId) -> changeAttribute "id" newId subtree) $ zip subTrees (map show  [1..(length subTrees)])
-fixIds tree@(Text _) = tree                 
 
 
 t1 :: Tree
-t1 = (Element "people" [Element "person" [Element "name" [Text "Mimi"] [],Element "age" [Text "15"] [],Element "address" [Element "city" [Text "Sofia"] [],Element "street" [Element "strname" [Text "Rakovska"] [],Element "number" [Element "digit" [Text "1"] [],Element "digit" [Text "2"] []] []] []] []] [("id","8")],Element "person" [Element "name" [Text "Gosho"] [],Element "age" [Text "23"] [],Element "address" [Element "city" [Text "Pernik"] [],Element "street" [Element "strname" [Text "Golf"] [],Element "number" [Element "digit" [Text "3"] [],Element "digit" [Text "3"] []] []] []] []] [("id","2")],Element "person" [Element "name" [Text "Pesho"] [],Element "age" [Text "30"] [],Element "address" [Element "city" [Text "Veliko Tarnovo"] [],Element "street" [Element "strname" [Text "Street_Pesho"] [],Element "number" [Element "digit" [Text "4"] [],Element "digit" [Text "8"] []] []] []] []] [("id","3")]] [])
+t1 = (Element "people" [Element "person" [Element "name" [Text "Mimi"] [],Element "age" [Text "15"] [],Element "address" [Element "city" [Text "Sofia"] [],Element "street" [Element "strname" [Text "Rakovska"] [],Element "number" [Element "digit" [Text "1"] [],Element "digit" [Text "2"] []] []] []] []] [("id","1")],Element "person" [Element "name" [Text "Gosho"] [],Element "age" [Text "23"] [],Element "address" [Element "city" [Text "Pernik"] [],Element "street" [Element "strname" [Text "Golf"] [],Element "number" [Element "digit" [Text "3"] [],Element "digit" [Text "3"] []] []] []] []] [("id","2")],Element "person" [Element "name" [Text "Pesho"] [],Element "age" [Text "30"] [],Element "address" [Element "city" [Text "Veliko Tarnovo"] [],Element "street" [Element "strname" [Text "Street_Pesho"] [],Element "number" [Element "digit" [Text "4"] [],Element "digit" [Text "8"] []] []] []] []] [("id","3")]] [])
 
 
 

@@ -1,23 +1,29 @@
 import System.IO
+import Control.Exception
 import Data.Char
 import Debug.Trace
 import TextProcessUtils
 import TreeUtils
+import StructureUtils
 
+-- Commands are of type: add <oject_type> [<element_name>=<element_value>]*
 processAdd :: String -> Tree -> IO()
-processAdd args t
-    | canProceed = writeFile "file2.txt" $ treeToXML $ addTree t $ modifyFromList propList $ makeDefault $ head $ getSubTrees name t
-    | otherwise  = putStrLn "Operation cannot be performed"
+processAdd args t 
+    | not validPaths = putStrLn "Specified path to property is not valid. It is misspelled or the path to it is wrong."
+    | length invalidDataTypes > 0 = putStrLn $ "Data entered is not of relevant type. Problems: " ++ problems
+    | otherwise  = writeFile "file1.txt" $ treeToXML $ fixIds $ addTree t $ modifyFromList propList $ makeDefault $ head $ getSubTrees name t
     where 
         name = takeWhile (not . isSpace) args
-        propList = convertToPropList $ takeAfter name args
-        canProceed = not $ null $ getSubTrees name t
+        propList = convertToPropList name $ takeAfter name args
+        validPaths = all (\(prop, _) -> checkPathPerson prop) propList
+        invalidDataTypes = filter (\(prop, value) -> not $ checkTypeValidityPerson prop value) propList
+        problems = concat $ map (\(prop, _) -> prop ++ " -> " ++ (getDataTypePerson prop) ++ "\n") invalidDataTypes
 
 processDelete :: String -> Tree -> IO()
 processDelete args t 
-    | length argLst == 2 = do
-                             writeFile "file2.txt" $ treeToXML $ deleteSubTreeByCondition prop condVal t
-                             putStrLn "Delete executed successfully"
+    | length argLst == 2 && checkPathPerson prop = do
+                                                     writeFile "file1.txt" $ treeToXML $ fixIds $ deleteSubTreeByCondition prop condVal t
+                                                     putStrLn "Delete executed successfully"
     | otherwise          = putStrLn "Wrong number of arguments! Usage: delete <cond_prop> <cond_prop_val>"
         where
             argLst  = split args
@@ -26,16 +32,21 @@ processDelete args t
 
 processUpdate :: String -> Tree -> IO()
 processUpdate args t 
-    | length argLst == 4 = do
-                              writeFile "file2.txt" $ treeToXML $ changePropByCondition prop cond el newVal t
+    | not $ checkTypeValidityPerson el newVal = putStrLn $ "Invalid data type" ++ getDataTypePerson el
+    | not $ checkPathPerson prop              = putStrLn $ "Wrong property path: " ++ prop
+    | otherwise = do
+                              writeFile "file1.txt" $ treeToXML $ changePropByCondition prop cond el newVal t
                               putStrLn "Update executed successfully"
     | otherwise = putStrLn $ "Wrong number of arguments! Usage update <cond_prop> <cond_prop_val> <new_prop> <new_prop_val>"
     where
-        argLst = split args 
-        prop   = argLst !! 0
-        cond   = argLst !! 1
-        el     = argLst !! 2
-        newVal = argLst !! 3
+        argLst      = matchGroups "([[:alpha:]/]+)[[:space:]]+\"([[:alpha:][:space:]]+)\"" args
+        objName     = matchRegex "^[[:alpha:]]+" args
+        prop        = fixPath $ argLst !! 0 !! 1
+        cond        = argLst !! 0 !! 2
+        el          = fixPath $ argLst !! 1 !! 1
+        newVal      = argLst !! 1 !! 2
+        fixPath arg = if ("^" ++ objName ++ "/") `matches` arg then arg else objName ++ "/" ++ arg
+
 
 processRead :: String -> Tree -> IO()
 processRead args t
@@ -50,11 +61,14 @@ processRead args t
             isAttrListing = matches "[a-z]+\\(@[a-zA-Z0-9_]+\\)" args
             attr          = matchRegex "[^@]+" $ matchRegex "@[a-zA-Z0-9_]+" args
             prop          = matchRegex "^[^[]+" args
-            
+
 
 main :: IO()
 main = do 
-    contents <- readFile "file1.txt"
+    inFile <- openFile "file1.txt" ReadMode
+    contents <- hGetContents inFile
+    evaluate $ length contents
+    hClose inFile
     input <- getLine
     let command = takeWhile (not . isSpace) input
         args = dropWhile (isSpace) $ takeAfter command input
@@ -63,9 +77,6 @@ main = do
                     "update" -> processUpdate args (createTree "people" contents)
                     "delete" -> processDelete args (createTree "people" contents)
                     "read"   -> processRead args (createTree "people" contents)
-                    "string" -> putStr $ show $ createTree "people" contents
                     _        -> putStrLn "Invalid command"
     hFlush stdout
     main 
-    --processCommand command args
-    --writeFile "file2.txt" new
